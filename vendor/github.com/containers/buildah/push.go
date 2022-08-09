@@ -17,9 +17,26 @@ import (
 	"github.com/containers/storage"
 	"github.com/containers/storage/pkg/archive"
 	digest "github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
+
+// cacheLookupReferenceFunc wraps a BlobCache into a
+// libimage.LookupReferenceFunc to allow for using a BlobCache during
+// image-copy operations.
+func cacheLookupReferenceFunc(directory string, compress types.LayerCompression) libimage.LookupReferenceFunc {
+	// Using a closure here allows us to reference a BlobCache without
+	// having to explicitly maintain it in the libimage API.
+	return func(ref types.ImageReference) (types.ImageReference, error) {
+		if directory == "" {
+			return ref, nil
+		}
+		ref, err := blobcache.NewBlobCache(ref, directory, compress)
+		if err != nil {
+			return nil, fmt.Errorf("error using blobcache %q: %w", directory, err)
+		}
+		return ref, nil
+	}
+}
 
 // PushOptions can be used to alter how an image is copied somewhere.
 type PushOptions struct {
@@ -99,13 +116,11 @@ func Push(ctx context.Context, image string, dest types.ImageReference, options 
 		libimageOptions.Writer = nil
 	}
 
-	if options.BlobDirectory != "" {
-		compress := types.PreserveOriginal
-		if options.Compression == archive.Gzip {
-			compress = types.Compress
-		}
-		libimageOptions.SourceLookupReferenceFunc = blobcache.CacheLookupReferenceFunc(options.BlobDirectory, compress)
+	compress := types.PreserveOriginal
+	if options.Compression == archive.Gzip {
+		compress = types.Compress
 	}
+	libimageOptions.SourceLookupReferenceFunc = cacheLookupReferenceFunc(options.BlobDirectory, compress)
 
 	runtime, err := libimage.RuntimeFromStore(options.Store, &libimage.RuntimeOptions{SystemContext: options.SystemContext})
 	if err != nil {
@@ -120,7 +135,7 @@ func Push(ctx context.Context, image string, dest types.ImageReference, options 
 
 	manifestDigest, err := manifest.Digest(manifestBytes)
 	if err != nil {
-		return nil, "", errors.Wrapf(err, "error computing digest of manifest of new image %q", transports.ImageName(dest))
+		return nil, "", fmt.Errorf("error computing digest of manifest of new image %q: %w", transports.ImageName(dest), err)
 	}
 
 	var ref reference.Canonical
