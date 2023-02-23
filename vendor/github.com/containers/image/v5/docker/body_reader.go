@@ -41,7 +41,7 @@ type bodyReader struct {
 }
 
 // newBodyReader creates a bodyReader for request path in c.
-// firstBody is an already correctly opened body for the blob, returning the full blob from the start.
+// firstBody is an already correctly opened body for the blob, returing the full blob from the start.
 // If reading from firstBody fails, bodyReader may heuristically decide to resume.
 func newBodyReader(ctx context.Context, c *dockerClient, path string, firstBody io.ReadCloser) (io.ReadCloser, error) {
 	logURL, err := c.resolveRequestURL(path)
@@ -193,7 +193,7 @@ func (br *bodyReader) Read(p []byte) (int, error) {
 			return n, fmt.Errorf("%w (after reconnecting, fetching blob: %v)", originalErr, err)
 		}
 
-		logrus.Debugf("Successfully reconnected to %s", redactedURL)
+		logrus.Debugf("Succesfully reconnected to %s", redactedURL)
 		consumedBody = true
 		br.body = res.Body
 		br.lastRetryOffset = br.offset
@@ -229,12 +229,12 @@ func (br *bodyReader) errorIfNotReconnecting(originalErr error, redactedURL stri
 		logrus.Infof("Reading blob body from %s failed (%v), reconnecting after %d bytes…", redactedURL, originalErr, progress)
 		return nil
 	}
-	if br.lastRetryTime == (time.Time{}) || msSinceLastRetry >= bodyReaderMSSinceLastRetry {
-		if br.lastRetryTime == (time.Time{}) {
-			logrus.Infof("Reading blob body from %s failed (%v), reconnecting (first reconnection)…", redactedURL, originalErr)
-		} else {
-			logrus.Infof("Reading blob body from %s failed (%v), reconnecting after %.3f ms…", redactedURL, originalErr, msSinceLastRetry)
-		}
+	if br.lastRetryTime == (time.Time{}) {
+		logrus.Infof("Reading blob body from %s failed (%v), reconnecting (first reconnection)…", redactedURL, originalErr)
+		return nil
+	}
+	if msSinceLastRetry >= bodyReaderMSSinceLastRetry {
+		logrus.Infof("Reading blob body from %s failed (%v), reconnecting after %.3f ms…", redactedURL, originalErr, msSinceLastRetry)
 		return nil
 	}
 	logrus.Debugf("Not reconnecting to %s: insufficient progress %d / time since last retry %.3f ms", redactedURL, progress, msSinceLastRetry)
